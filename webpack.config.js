@@ -301,9 +301,11 @@ module.exports = (env, argv) => {
                 try {
                   return (
                     `<pre class="hljs"><code>${highlight.highlight(
-                      lang, 
                       str, 
-                      true
+                      {
+                        language: lang, 
+                        ignoreIllegals: true
+                      }
                     ).value}</code></pre>`
                   );
                 } catch (__) {
