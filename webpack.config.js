@@ -34,7 +34,6 @@ const entryPointFile = fs.readdirSync(path.resolve(THE_CWD, "src"))
   }).pop();
 
 /**
- * 
  * @param {*} env 
  *     Informações relativas ao ambiente
  * @param {*} argv 

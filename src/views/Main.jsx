@@ -31,7 +31,7 @@ export const Main = () => {
       </p>
 
       <p className={"text-center"}>
-        Este projeto foi feito com o intuito de ensinar as pessoas a usarem Webpack, e explicar como bundlers e templates de projeto funcionam.
+        Este projeto foi feito com o intuito de ensinar as pessoas a usarem Webpack, e explicar como bundlers e templates de projeto funcionam. Fazendo parte de um projeto no qual monto o MESMO boilerplate para três frameworks diferentes, mas seguindo o mesmo conceito e lógicas.
       </p>
 
       <hr/>
