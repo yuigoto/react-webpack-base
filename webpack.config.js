@@ -2,103 +2,142 @@ const autoprefixer = require("autoprefixer");
 const copyWebpack = require("copy-webpack-plugin");
 const fs = require("fs");
 const highlight = require("highlight.js");
-const htmlWebpack = require("html-webpack-plugin");
-const path = require("path");
+const htmlWebpackPlugin = require("html-webpack-plugin");
 const markdownIt = require("markdown-it");
 const markdownItEmoji = require("markdown-it-emoji");
 const miniCssExtract = require("mini-css-extract-plugin");
+const path = require("path");
 const sass = require("sass");
-const { exit } = require("process");
 
 /**
- * Diretório de trabalho atual, sempre relativo ao diretório de onde é 
- * executado o webpack.
+ * Caminho para o diretório de trabalho atual (current working directory).
+ * 
+ * No caso, o local de onde o script é executado.
  * 
  * @type {string}
  */
-const THE_CWD = process.cwd();
+const WORK_DIR = process.cwd();
 
 /**
- * Escaneia `/src` em busca de um entrypoint, no caso:
- * - index.js;
- * - index.jsx;
+ * Gera configurações para manifest file de build.
  * 
- * Priorizando, de forma preguiçosa, sempre o ÚLTIMO. Então `.jsx` possui 
- * precedência sobre `.js`.
- * 
- * @type {string}
+ * @param {boolean} isProduction 
+ * @returns {*}
  */
-const entryPointFile = fs.readdirSync(path.resolve(THE_CWD, "src"))
-  .filter(file => {
-    return file.match(/index\.jsx?$/);
-  }).pop();
+const manifestOptions = (isProduction) => ({
+  basePath: "",
+  publicPath: (isProduction) ? "/" : "",
+});
 
 /**
+ * Retorna um `index` da pasta desejada, relativo ao `WORK_DIR`.
+ * 
+ * Busca por arquivos com nome `index` e alguma das extensões abaixo, em 
+ * ordem de prioridade:
+ * - TSX;
+ * - JSX;
+ * - TS;
+ * - JS;
+ * 
+ * Modifique de acordo com as suas necessidades.
+ *  
+ * @param {string} folder 
+ *     Pasta ou caminho para a mesma, tendo como base a raíz do repositório
+ * @returns {string}
+ */
+const getEntryPointFile = (folder) => {
+  const fileList = fs.readdirSync(
+    path.resolve(WORK_DIR, folder)
+  );
+
+  const extensions = ["jsx", "mjs"];
+
+  for (let extension of extensions) {
+    if (fileList.includes(`index.${extension}`)) {
+      return `index.${extension}`;
+    }
+  }
+
+  return `index.js`;
+};
+
+/**
+ * Retorna configurações do Webpack.
+ * 
  * @param {*} env 
- *     Informações relativas ao ambiente
+ *     Objeto com variáveis do ambiente da aplicação 
  * @param {*} argv 
- *     Argumentos passados ao Webpack
+ *     Objeto com parâmetros passados via CLI ao Webpack
  * @returns {import("webpack").Configuration}
  */
 module.exports = (env, argv) => {
-  /**
-   * Estamos, ou não, em ambiente de produção?
-   * 
-   * @type {bool}
-   */
-  const isProduction = argv.mode === "production";
-
-  // STYLESHEET LOADERS
+  // GENERAL
   // --------------------------------------------------------------------
-  
-  // CSS padrão
+
+  /** @type {boolean} */
+  const isProduction = (argv.mode === "production");
+
+  const assetPaths = ["", "img", "fonts", "media", "data"].map((item) => (
+    new htmlWebpackPlugin({
+      inject: true,
+      filename: (item.trim() !== "") 
+        ? `assets/${item}/index.html` 
+        : `assets/index.html`,
+      templateContent: `<!doctype html><html>
+        <head>
+          <title>Not Allowed</title>
+          <meta http-equiv="refresh" content="0; url=/">
+        </head>
+      </html>`,
+      hash: true,
+      minify: {
+        minifyCSS: true,
+        minifyJS: true,
+        removeComments: true,
+        collapseWhitespace: true,
+      },
+    })
+  ));
+
+  /**
+   * Lista todos os diretórios usados para a resolução de módulos.
+   * 
+   * @type {Array<string>}
+   */
+  const resolvePaths = [
+    path.resolve(WORK_DIR, "./src"),
+  ];
+
+  // LOADERS
+  // --------------------------------------------------------------------
+
   const cssLoader = {
     loader: "css-loader",
     options: {
-      // Resolução de @import
-      importLoaders: 2,
-      sourceMap: false,
-    },
-  };
-  
-  // CSS module parser
-  const cssModuleLoader = {
-    loader: "css-loader",
-    options: {
-      modules: {
-        // Configuração do nome de classe no escopo
-        localIdentName: isProduction
-          ? "[hash:md5:8]"
-          : "[name]_[local]_[hash:base64:5]",
-        // Como nomes de classes serão exportados (camelCase, asIs, dashes)
-        exportLocalsConvention: "camelCase",
-      },
-      // Resolução de @import
+      esModule: false, 
+      modules: false, 
       importLoaders: 2,
       sourceMap: false,
     },
   };
 
-  // Post CSS
-  const postCssLoader = {
+  const postcssLoader = {
     loader: "postcss-loader",
     options: {
       sourceMap: false,
       postcssOptions: {
         plugins: [
           autoprefixer({
-            flexbox:"no-2009"
+            flexbox: "no-2009",
           }),
         ],
       },
     },
   };
 
-  // SASS
   const sassLoader = {
     loader: "sass-loader",
     options: {
-      // Forçamos o uso de `sass`, ao invés de `node-sass`
       implementation: sass,
       sourceMap: false,
       sassOptions: {
@@ -106,188 +145,112 @@ module.exports = (env, argv) => {
         outputStyle: "compressed",
         sourceComments: false,
         includePaths: [
-          path.resolve(THE_CWD, "src", "styles"),
+          path.resolve(WORK_DIR, "src", "styles"),
         ],
         quietDeps: true,
       },
     },
   };
 
-  // Styles globais
-  const styleLoader = isProduction
+  const styleLoader = (isProduction) 
     ? miniCssExtract.loader 
     : "style-loader";
 
-  // CONFIGURAÇÃO
+  // CONFIGURAÇÕES
   // --------------------------------------------------------------------
 
-  /**
-   * @type {import("webpack").Configuration}
-   */
-  const webpackConfig = {};
+  /** @type {import("webpack").Configuration} */
+  const config = {};
 
-  webpackConfig.stats = {
-    colors: true,
-    hash: false,
-    version: false,
-    timings: true,
-    assets: true,
-    chunks: false,
-    modules: false,
-    reasons: false,
-    children: false,
-    source: false,
-    errors: true,
-    errorDetails: true,
-    warnings: false,
-    publicPath: false
+  config.devServer = {
+    hot: "true",
+    port: 8080,
+    historyApiFallback: true,
   };
 
-  webpackConfig.target = "web";
-  
-  webpackConfig.mode = !isProduction ? "development" : "production";
+  config.devtool = false;
 
-  webpackConfig.entry = {
-    build: path.resolve(THE_CWD, "./src", entryPointFile),
+  config.entry = {
+    index: {
+      import: path.resolve(WORK_DIR, "./src", getEntryPointFile("./src")),
+      dependOn: "npm.libs", 
+    },
+    "npm.libs": [
+      "react",
+      "react-dom"
+    ],
   };
-  
-  webpackConfig.devtool = false;
-  
-  webpackConfig.output = {
-    // Inclui comentários sobre caminho dos arquivos
-    pathinfo: false,
-    path: path.resolve(THE_CWD, "dist"),
-    filename: "[name].bundle.js",
-    publicPath: "/",
-    clean: true,
-  };
-  
-  webpackConfig.module = {
+
+  config.mode = (isProduction) ? "production" : "development";
+
+  config.module = {
     rules: [
-      // JavaScript
       {
-        test: /\.(jsx|mjs)$/,
+        test: /\.(jsx?|mjs)$/,
         use: {
-          loader: "babel-loader", 
+          loader: "babel-loader",
           options: {
-            presets: [
-              [
-                "@babel/preset-env",
-                {
-                  targets: {
-                    browsers: [
-                      "last 2 Chrome versions",
-                      "last 2 Firefox versions",
-                      "last 2 Safari versions",
-                      "last 2 iOS versions",
-                      "last 1 Android version",
-                      "last 1 ChromeAndroid version",
-                      "ie 11"
-                    ],
-                  },
-                },
-              ],
-              [
-                "@babel/preset-react",
-                {
-                  // Forçamos a usar JSX Transform
-                  runtime: "automatic",
-                },
-              ]
-            ],
-            plugins: [
-              // Converte `import` em um deferred `require` para o node
-              "dynamic-import-node",
-              [
-                "@babel/plugin-transform-react-jsx",
-                {
-                  // Forçamos a usar JSX Transform
-                  runtime: "automatic",
-                },
-              ],
-              // Permite inicializar propriedades de classes
-              "@babel/plugin-proposal-class-properties",
-            ],
+            babelrc: true,
           },
         },
       },
-
-      // CSS Modules
-      {
-        test: /\.module\.(sa|sc|c)ss$/,
-        use: [
-          styleLoader,
-          cssModuleLoader,
-          postCssLoader,
-          sassLoader
-        ]
-      },
-
-      // CSS
       {
         test: /\.(sa|sc|c)ss$/,
-        exclude: /\.module\.(sa|sc|c)ss$/,
         use: [
           styleLoader,
           cssLoader,
-          postCssLoader,
-          sassLoader
-        ]
+          postcssLoader,
+          sassLoader,
+        ],
       },
-
-      // Fonts (exceto SVG)
       {
         test: /\.(eot|otf|ttf|woff|woff2)$/,
         use: {
           loader: "file-loader",
           options: {
-            esModule: false,
-            outputPath: "assets/fonts/",
-            publicPath: "/assets/fonts",
-          }
-        }
-      },
-
-      // Imagens
-      {
-        test: /\.(png|jpg|jpeg|gif|webp|svg)$/,
-        use: {
-          loader: "file-loader",
-          options: {
+            name: "[hash:16].[ext]",
             esModule: false,
             outputPath: "assets/img/",
             publicPath: "/assets/img",
-          }
-        }
+          },
+        },
       },
-
-      // Mídia
+      {
+        test: /\.(png|jpe?g|gif|webp|svg)$/,
+        use: {
+          loader: "file-loader",
+          options: {
+            name: "[hash:16].[ext]",
+            esModule: false,
+            outputPath: "assets/img/",
+            publicPath: "/assets/img",
+          },
+        },
+      },
       {
         test: /\.(wav|mp3|mp4|avi|mpg|mpeg|mov|ogg|webm)$/,
         use: {
           loader: "file-loader",
           options: {
+            name: "[hash:16].[ext]",
             esModule: false,
             outputPath: "assets/media/",
             publicPath: "/assets/media",
-          }
-        }
+          },
+        },
       },
-
-      // Documentos
       {
         test: /\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/,
         use: {
           loader: "file-loader",
           options: {
+            name: "[hash:16].[ext]",
             esModule: false,
             outputPath: "assets/data/",
             publicPath: "/assets/data",
-          }
-        }
+          },
+        },
       },
-
-      // Markdown, because we can
       {
         test: /\.md$/,
         loader: "frontmatter-markdown-loader",
@@ -329,26 +292,50 @@ module.exports = (env, argv) => {
             "react-component"
           ],
           react: {
-            root: "markdown-content",
-          },
+            root: "markdown-content"
+          }
         },
       },
-    ]
+    ],
   };
 
-  webpackConfig.plugins = [
-    new htmlWebpack({
-      inject: true,
-      filename: "index.html",
-      template: path.join(THE_CWD, "public", "index.html"),
-      hash: true,
-      minify: {
-        minifyJS: true,
-        minifyCSS: true,
-        removeComments: true,
-        collapseWhitespace: true,
+  config.optimization = {
+    minimize: isProduction,
+    splitChunks: {
+      chunks: "all",
+      maxInitialRequests: Infinity,
+      minSize: 0,
+      cacheGroups: {
+        bootstrap: {
+          test: /vendor\.(sa|sc|c)ss/,
+          name: "npm.vendor",
+        },
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: (module) => {
+            const packageName = module.context.match(
+              /[\\/]node_modules[\\/](.*?)([\\/]|$)/
+            )[1];
+
+            return `npm.${packageName.replace("@", "")}`;
+          },
+          reuseExistingChunk: true, 
+        },
       },
-    }),
+    },
+  };
+
+  config.output = {
+    pathinfo: false,
+    path: path.resolve(WORK_DIR, "build"),
+    filename: "[name].[contenthash:8].js",
+    publicPath: "/",
+    clean: true,
+  };
+
+  config.plugins = [
+    ...assetPaths, 
+
     new copyWebpack({
       patterns: [
         {
@@ -361,51 +348,59 @@ module.exports = (env, argv) => {
               "**/*.html",
             ],
           },
-        }
+        },
       ],
     }),
+
+    new htmlWebpackPlugin({
+      inject: true,
+      filename: "index.html",
+      template: path.resolve(WORK_DIR, "public", "index.html"),
+      hash: true,
+      minify: {
+        minifyCSS: true,
+        minifyJS: true,
+        removeComments: true,
+        collapseWhitespace: true,
+      },
+    }),
+
     new miniCssExtract({
-      filename: "[name].css",
+      filename: "[name].css", 
     }),
   ];
 
-  webpackConfig.devServer = {
-    hot: true,
-    port: 3000
-  };
-
-  webpackConfig.optimization = {
-    minimize: true,
-    splitChunks: {
-      chunks: "all",
-      // Número máximo de requests paralelos em um entrypoint
-      maxInitialRequests: Infinity,
-      // Tamanho mínimo, em bytes, para um chunk ser gerado
-      minSize: 0,
-      cacheGroups: {
-        build: {
-          name: "build",
-        },
-        vendor: {
-          test: /[\\/]node_modules[\\/]/,
-          name: "vendor",
-        },
-      },
-    },
-  };
-
-  webpackConfig.resolve = {
+  config.resolve = {
     modules: [
-      path.resolve(THE_CWD, "./src"),
+      ...resolvePaths,
       "node_modules",
     ],
     extensions: [
       ".js",
       ".jsx",
       ".mjs",
-      ".json",
     ],
+    plugins: [],
   };
 
-  return webpackConfig;
+  config.stats = {
+    colors: true,
+    hash: false,
+    version: false,
+    timings: true,
+    assets: true,
+    chunks: false,
+    modules: false,
+    reasons: false,
+    children: false,
+    source: false,
+    errors: true,
+    errorDetails: true,
+    warnings: true,
+    publicPath: false,
+  };
+
+  config.target = "web";
+
+  return config;
 };

@@ -1,21 +1,16 @@
 import React from "react";
 import ReactDOM from "react-dom";
 import { Main } from "views/Main";
-
 import "styles/main.scss";
 
-const main = document.querySelector("#app");
+const main = document.createElement("div");
+main.id = "#app";
 
-if (main) {
-  ReactDOM.render(
-    <React.StrictMode>
-      <Main />
-    </React.StrictMode>,
-    main
-  );
-} else {
-  console.log("[App]: Não foi possível inicializar o app.");
-}
+document.body.appendChild(main);
 
-// Define hot reload
-module.hot.accept();
+ReactDOM.render(
+  <React.StrictMode>
+    <Main/>
+  </React.StrictMode>,
+  main
+);
